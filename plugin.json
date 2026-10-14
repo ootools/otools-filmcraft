@@ -1,0 +1,26 @@
+{
+  "devUrl": "http://127.0.0.1:6486",
+  "developerName": "jry",
+  "displayName": "FilmCraft",
+  "displayNameCN": "视频剪辑",
+  "entry": "dist/index.html",
+  "quickDev": true,
+  "hasAd": false,
+  "icon": "🎬",
+  "inPluginPurchase": false,
+  "key": [
+    "filmcraft",
+    "premiere",
+    "视频剪辑",
+    "时间线",
+    "调色",
+    "转场",
+    "剪辑"
+  ],
+  "openInBrowser": false,
+  "packid": "otools-filmcraft",
+  "screenshots": [],
+  "summary": "FilmCraft（开源、纯 Rust 重写的 Adobe Premiere Pro 式视频剪辑）的 OTools 插件版：时间线、转场、调色与音频混合。",
+  "uuid": "otools-filmcraft",
+  "version": "0.1.0"
+}

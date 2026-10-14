@@ -1,0 +1,56 @@
+# 构建 FilmCraft 的 OTools 插件前端（WASM → dist/）并上传产物。
+# 触发：push 到 main、PR、手动。
+#
+# 本 workflow 只构建**前端**。插件是纯前端的（没有 native cdylib），
+# 所以产物就是 dist/ 这一份静态资源，拷到 otools 仓库的
+# plugins/otools-filmcraft/dist 即可用。
+#
+# 上游源码不在 git 里：scripts/build-wasm.mjs 会先按 upstream.pin 拉取，再跑 trunk。
+name: build-plugin
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 安装工具链
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add wasm32-unknown-unknown
+
+      - name: 安装 trunk
+        run: cargo install trunk --locked
+
+      - name: 缓存 cargo 与 trunk 工具
+        uses: actions/cache@v4
+        with:
+          # upstream/ 不在仓库里，所以 key 只能认 upstream.pin + 我们自己的 lock。
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            shell/target
+            ~/.cache/trunk
+          key: otools-filmcraft-wasm-${{ runner.os }}-${{ hashFiles('upstream.pin', 'shell/Cargo.lock') }}
+          restore-keys: otools-filmcraft-wasm-${{ runner.os }}-
+
+      - name: 构建 dist/
+        run: node scripts/build-wasm.mjs
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: otools-filmcraft-dist
+          path: dist/
+          if-no-files-found: error

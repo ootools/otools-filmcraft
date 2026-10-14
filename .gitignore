@@ -1,0 +1,24 @@
+# ---- 构建产物 ----
+# trunk 的产物（plugin.json 的 entry 指向 dist/index.html），本地构建，不入库
+dist/
+dist-pack/
+target/
+**/target/
+
+# ---- 上游源码 ----
+# 不入库：只保留 upstream.pin 里的 commit SHA，按需 node scripts/fetch-upstream.mjs 拉取
+/upstream/
+
+# ---- 依赖 ----
+node_modules/
+
+# ---- 编辑器 / 系统 ----
+.DS_Store
+Thumbs.db
+*.swp
+
+# ---- 本地日志 ----
+*.log
+
+# playwright-cli 本地调试的临时输出
+.playwright-cli/

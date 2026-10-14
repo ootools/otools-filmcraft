@@ -1,0 +1,195 @@
+name: release-plugin
+run-name: "插件${{ inputs.dry_run && '验证' || '发布' }} · ${{ inputs.display_version || github.ref_name }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      display_version:
+        description: "打包版本号（留空取 plugin.json）"
+        default: ""
+      auth_mode:
+        description: "市场认证方式"
+        type: choice
+        options: [pat, oidc, login, shared]
+        default: pat
+      publish_market:
+        description: "同步插件市场（dry-run 时仅检查配置，不上架）"
+        type: boolean
+        default: false
+      dry_run:
+        description: "仅构建和校验，不创建 Release、不提交市场"
+        type: boolean
+        default: true
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      packid: ${{ steps.meta.outputs.packid }}
+      release_tag: ${{ steps.meta.outputs.release_tag }}
+      publish_enabled: ${{ steps.meta.outputs.publish_enabled }}
+      market_requested: ${{ steps.meta.outputs.market_requested }}
+      market_enabled: ${{ steps.meta.outputs.market_enabled }}
+      validate_release: ${{ steps.meta.outputs.validate_release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: 校验版本、标签和发布开关
+        id: meta
+        env:
+          DISPLAY_VERSION: ${{ inputs.display_version }}
+          RELEASE_SOURCE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          EVENT_NAME: ${{ github.event_name }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          PUBLISH_MARKET: ${{ inputs.publish_market }}
+          AUTO_PUBLISH_MARKET: ${{ vars.OTOOLS_PUBLISH_MARKET || 'false' }}
+        run: node scripts/publish-market.mjs meta
+      - name: 发布脚本回归测试
+        run: node --test scripts/*.test.mjs
+      # 本插件是纯 Rust/WASM 前端（egui），不用 pnpm/vite：
+      # 上游要求 rustc >= 1.95；trunk 用预编译二进制（比 cargo install 快），
+      # 它首次运行会自行下载 wasm-bindgen-cli 与 wasm-opt。
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            shell -> shell/target
+          key: plugin-wasm
+      - name: 安装 trunk
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/trunk.tar.gz "https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz"
+          mkdir -p "$HOME/.local/bin"
+          tar -xzf /tmp/trunk.tar.gz -C "$HOME/.local/bin" trunk
+          chmod +x "$HOME/.local/bin/trunk"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          trunk --version
+      - name: 构建 WASM 前端
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        run: node scripts/build-wasm.mjs
+      - name: 打包正式插件并生成摘要
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: node scripts/pack-plugin.mjs --out dist-pack --version "$VERSION"
+      - name: 独立验证插件包
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          PACKID: ${{ steps.meta.outputs.packid }}
+        run: node scripts/verify-plugin.mjs dist-pack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oplg
+          path: |
+            dist-pack/*.oplg
+            dist-pack/plugin.json
+            dist-pack/logo.svg
+            dist-pack/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+      - name: 构建摘要
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          PACKID: ${{ steps.meta.outputs.packid }}
+          PUBLISH_ENABLED: ${{ steps.meta.outputs.publish_enabled }}
+        run: |
+          printf '### 插件构建完成\n- 插件：`%s`\n- 版本：`%s`\n- 允许正式发布：`%s`\n\n' "$PACKID" "$VERSION" "$PUBLISH_ENABLED" >> "$GITHUB_STEP_SUMMARY"
+          cat dist-pack/SHA256SUMS >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    needs: build
+    if: ${{ needs.build.outputs.validate_release == 'true' }}
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/download-artifact@v4
+        with:
+          name: oplg
+          path: release-assets
+      - name: 发布前重新验证产物
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          PACKID: ${{ needs.build.outputs.packid }}
+        run: node scripts/verify-plugin.mjs release-assets
+      - name: 检查市场凭证配置（不发送凭证、不上架）
+        if: ${{ needs.build.outputs.market_requested == 'true' }}
+        env:
+          AUTH_MODE: ${{ inputs.auth_mode || vars.XYCLOUD_AUTH_MODE || 'pat' }}
+          XYCLOUD_PAT: ${{ secrets.XYCLOUD_PAT }}
+          XYCLOUD_LOGIN_TOKEN: ${{ secrets.XYCLOUD_LOGIN_TOKEN }}
+          OTOOLS_MARKET_TOKEN: ${{ secrets.OTOOLS_MARKET_TOKEN }}
+          XYCLOUD_OIDC_ISSUER: ${{ vars.XYCLOUD_OIDC_ISSUER }}
+          XYCLOUD_PUBLISHER_ID: ${{ vars.XYCLOUD_PUBLISHER_ID }}
+          OTOOLS_MARKET_API: ${{ vars.OTOOLS_MARKET_API || 'https://otools-api.lingyun.net/api/v1/otools/plugin/publish' }}
+        run: node scripts/publish-market.mjs preflight
+      - name: 核验发布标签与构建提交
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: node scripts/release-policy.mjs
+      - name: 发布 GitHub Release
+        if: ${{ needs.build.outputs.publish_enabled == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          COMMIT_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --target "$COMMIT_SHA" --title "$RELEASE_TAG" --notes "otools-filmcraft v${RELEASE_VERSION}"
+          fi
+          gh release upload "$RELEASE_TAG" release-assets/*.oplg release-assets/logo.svg release-assets/plugin.json release-assets/SHA256SUMS --clobber
+      # OIDC 获取和使用在同一进程完成，秘密不经过 job outputs 或 artifact。
+      - name: 授权并提交市场
+        if: ${{ needs.build.outputs.market_enabled == 'true' }}
+        env:
+          AUTH_MODE: ${{ inputs.auth_mode || vars.XYCLOUD_AUTH_MODE || 'pat' }}
+          XYCLOUD_PAT: ${{ secrets.XYCLOUD_PAT }}
+          XYCLOUD_LOGIN_TOKEN: ${{ secrets.XYCLOUD_LOGIN_TOKEN }}
+          OTOOLS_MARKET_TOKEN: ${{ secrets.OTOOLS_MARKET_TOKEN }}
+          XYCLOUD_OIDC_ISSUER: ${{ vars.XYCLOUD_OIDC_ISSUER }}
+          XYCLOUD_OIDC_AUDIENCE: ${{ vars.XYCLOUD_OIDC_AUDIENCE || 'otools-ci' }}
+          XYCLOUD_PUBLISHER_ID: ${{ vars.XYCLOUD_PUBLISHER_ID }}
+          OTOOLS_MARKET_API: ${{ vars.OTOOLS_MARKET_API || 'https://otools-api.lingyun.net/api/v1/otools/plugin/publish' }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+          RELEASE_VERSION: ${{ needs.build.outputs.version }}
+          PLUGIN_MANIFEST: release-assets/plugin.json
+        run: node scripts/publish-market.mjs
+      - name: 发布摘要
+        env:
+          PUBLISH_ENABLED: ${{ needs.build.outputs.publish_enabled }}
+          MARKET_ENABLED: ${{ needs.build.outputs.market_enabled }}
+          RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
+        run: |
+          printf '### 发布检查完成\n- 正式发布：`%s`\n- 市场提交：`%s`\n- 标签：`%s`\n' "$PUBLISH_ENABLED" "$MARKET_ENABLED" "$RELEASE_TAG" >> "$GITHUB_STEP_SUMMARY"
