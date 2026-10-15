@@ -178,6 +178,20 @@
           return '';
         },
 
+        // 宿主界面语言（BCP 47，如 zh-CN）。OTools 在插件 webview 里注入
+        // `window.__OTOOLS_LOCALE__` 并同步 `document.documentElement.lang`，
+        // 切换语言时派发 `otools-locale-changed` 事件。
+        language: function () {
+          try {
+            var l =
+              (window.__OTOOLS_LOCALE__ && window.__OTOOLS_LOCALE__.locale) ||
+              (document.documentElement && document.documentElement.lang) ||
+              (typeof navigator !== 'undefined' && navigator.language) ||
+              '';
+            return l || '';
+          } catch (e) { return ''; }
+        },
+
         /**
          * 打开文件：弹宿主的打开对话框，读取选中的文件（工程或媒体）。
          * @param {{title?: string, extensions?: string[]}} request

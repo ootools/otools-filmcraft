@@ -19,15 +19,26 @@ mod otools;
 
 #[cfg(target_arch = "wasm32")]
 mod web {
+    use std::cell::{Cell, RefCell};
     use std::sync::Arc;
     use std::time::Duration;
 
     use filmcraft_engine::Session;
     use filmcraft_ui_egui::FilmcraftApp;
+    use wasm_bindgen::closure::Closure;
     use wasm_bindgen::JsCast as _;
 
     const CANVAS_ID: &str = "filmcraft_canvas";
     const LOADING_ID: &str = "filmcraft_loading";
+
+    thread_local! {
+        /// 宿主语言切换后，下一帧重新套用偏好（重读 `system_languages` 钩子）。
+        static NEEDS_LANG_SYNC: Cell<bool> = const { Cell::new(false) };
+        /// 是否已经按宿主语言初始化过一次。
+        static DID_INIT_LANG: Cell<bool> = const { Cell::new(false) };
+        /// 缓存 egui Context，供语言切换事件触发重绘。
+        static APP_CTX: RefCell<Option<egui::Context>> = RefCell::new(None);
+    }
 
     struct Shell {
         app: FilmcraftApp,
@@ -39,6 +50,12 @@ mod web {
         }
 
         fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+            // 缓存 Context，并响应宿主语言切换：切换后下一帧重套偏好 → UI 文案重渲染。
+            APP_CTX.with(|c| *c.borrow_mut() = Some(ctx.clone()));
+            let sync = !DID_INIT_LANG.with(|f| f.replace(true)) || NEEDS_LANG_SYNC.with(|f| f.replace(false));
+            if sync {
+                self.app.apply_prefs(ctx);
+            }
             // 异步读文件完成后排的动作在这里执行（上游用 `post` + WebApp 做同一件事）。
             crate::host::pump(&mut self.app);
             self.app.logic(ctx, frame);
@@ -87,6 +104,22 @@ mod web {
                             let _ = session.execute("file.openDemoProject", serde_json::json!({}));
                         }
                         let mut app = FilmcraftApp::new(session);
+                        // 跟随宿主语言：`system_languages` 钩子把宿主 locale 喂给上游，
+                        // 上游按 BCP47（如 zh-CN）映射到界面语言；宿主切换语言时由
+                        // `otools-locale-changed` 事件触发下一帧重套偏好（见 `logic`）。
+                        app.hooks.system_languages = Some(Box::new(|| {
+                            let l = crate::otools::host_language();
+                            if l.is_empty() { Vec::new() } else { vec![l] }
+                        }));
+                        // 让插件更纯粹：社区/外部链接（Discord、ArtCraft 官网、上游 GitHub）
+                        // 点击后静默吞掉，不再把用户拽出插件。
+                        app.hooks.open_url = Some(Box::new(|url: &str| {
+                            if crate::otools::is_community_link(url) {
+                                Ok(())
+                            } else {
+                                Err(format!("external link blocked in OTools plugin: {url}"))
+                            }
+                        }));
                         // GPU 合成需要浮点渲染目标：只有 WebGPU 支持（WebGL2 走 CPU 合成）。
                         let backend = cc.wgpu_render_state.as_ref().map(|rs| rs.adapter.get_info().backend);
                         if let Some(rs) = cc.wgpu_render_state.clone()
@@ -122,7 +155,25 @@ mod web {
                     Err(e) => el.set_inner_html(&format!("<p>FilmCraft 启动失败：{e:?}</p><p>需要支持 WebGPU 或 WebGL2 的浏览器。</p>")),
                 }
             }
+            install_locale_listener();
         });
+    }
+
+    /// 监听宿主语言切换（OTools 注入的 `otools-locale-changed` 事件），置位标志并请求重绘；
+    /// 真正套用偏好发生在下一帧 `Shell::logic`（重读 `system_languages` 钩子）。
+    fn install_locale_listener() {
+        let Some(window) = web_sys::window() else { return };
+        let closure = Closure::wrap(Box::new(|| {
+            NEEDS_LANG_SYNC.with(|f| f.set(true));
+            if let Some(ctx) = APP_CTX.with(|c| c.borrow().clone()) {
+                ctx.request_repaint();
+            }
+        }) as Box<dyn FnMut()>);
+        let _ = window.add_event_listener_with_callback(
+            "otools-locale-changed",
+            closure.as_ref().unchecked_ref::<js_sys::Function>(),
+        );
+        closure.forget();
     }
 }
 

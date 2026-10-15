@@ -43,7 +43,7 @@ js-sys = "0.3"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
 version = "0.3"
-features = ["Document", "Element", "HtmlCanvasElement", "HtmlElement", "Location", "UrlSearchParams", "Window"]
+features = ["Document", "Element", "EventTarget", "HtmlCanvasElement", "HtmlElement", "Location", "UrlSearchParams", "Window"]
 
 # 上游 workspace 没有 `[patch.crates-io]`，也不需要 vendor 补丁。
 [profile.release]

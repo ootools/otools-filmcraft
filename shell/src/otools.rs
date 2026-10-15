@@ -18,6 +18,11 @@ extern "C" {
     #[wasm_bindgen(js_namespace = filmcraftOtools, js_name = "theme")]
     fn host_theme() -> String;
 
+    /// 宿主界面语言（BCP 47，如 `zh-CN`）：OTools 注入到插件 webview 的
+    /// `window.__OTOOLS_LOCALE__.locale` / `document.documentElement.lang`。
+    #[wasm_bindgen(js_namespace = filmcraftOtools, js_name = "language")]
+    fn host_language_raw() -> String;
+
     /// `{title, extensions}` → `[{name, path, dataBase64}]`。
     #[wasm_bindgen(js_namespace = filmcraftOtools, js_name = "openFiles")]
     fn host_open_files(request: JsValue) -> js_sys::Promise;
@@ -41,6 +46,16 @@ pub fn available() -> bool {
 
 pub fn theme() -> String {
     host_theme()
+}
+
+pub fn host_language() -> String {
+    host_language_raw()
+}
+
+/// 社区/外部链接（Discord、ArtCraft 官网、上游 GitHub）：在 OTools 插件里点这些
+/// 会把用户拽到外部，让插件不纯粹。`open_url` 钩子对命中者返回 `Ok(())` 静默吞掉。
+pub fn is_community_link(url: &str) -> bool {
+    url.contains("discord.gg") || url.contains("getartcraft.com") || url.contains("github.com/storytold")
 }
 
 pub fn force_pick(force: bool) {
