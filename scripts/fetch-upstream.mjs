@@ -49,6 +49,38 @@ function currentHead() {
   return r.status === 0 ? r.stdout.trim() : null;
 }
 
+// 把 shell/patches/*.patch 幂等地打到 upstream/ 上。
+// 这些补丁是我们对上游的本地裁剪（如彻底移除 Discord 社区按钮），不入库、
+// 随 upstream/ 重拉而重放，保证「重拉不丢本地改动」。
+const patchesDir = path.join(repoRoot, 'shell', 'patches');
+
+function applyPatches() {
+  if (!fs.existsSync(patchesDir)) return;
+  const patches = fs.readdirSync(patchesDir).filter((f) => f.endsWith('.patch')).sort();
+  if (patches.length === 0) return;
+  console.log(`▸ 应用本地补丁（${patches.length} 个）…`);
+  for (const name of patches) {
+    const patch = path.join(patchesDir, name);
+    // 先用 --check 试探：能应用说明还没打；不能应用再判断是否已打过（幂等跳过）。
+    const check = exec(['apply', '--check', patch], upstreamDir);
+    if (check.status !== 0) {
+      const rev = exec(['apply', '--reverse', '--check', patch], upstreamDir);
+      if (rev.status === 0) {
+        console.log(`  · ${name} 已应用，跳过`);
+        continue;
+      }
+      console.warn(`  ! ${name} 无法应用（上游可能已变动）：${(check.stderr || '').trim()}`);
+      continue;
+    }
+    const r = exec(['apply', patch], upstreamDir);
+    if (r.status !== 0) {
+      console.warn(`  ! ${name} 应用失败：${(r.stderr || '').trim()}`);
+      continue;
+    }
+    console.log(`  ✓ ${name}`);
+  }
+}
+
 // 已经是 pinned commit 且没有脏改动：直接跳过（省一次几十 MB 的下载）。
 if (!force && fs.existsSync(path.join(upstreamDir, '.git'))) {
   const head = currentHead();
@@ -56,6 +88,7 @@ if (!force && fs.existsSync(path.join(upstreamDir, '.git'))) {
     const dirty = exec(['status', '--porcelain'], upstreamDir).stdout.trim();
     if (!dirty) {
       console.log(`upstream/ 已是 ${pin.upstream}@${shortSha}，跳过拉取。`);
+      applyPatches();
       process.exit(0);
     }
     console.log('upstream/ 有本地改动，重新拉取对齐 pinned commit。');
@@ -124,6 +157,7 @@ for (const [label, url] of transports) {
 
   console.log(`✓ 成功（${label}）：${pin.upstream}@${shortSha}`);
   console.log(`upstream/ 已就位 → ${upstreamDir}`);
+  applyPatches();
   process.exit(0);
 }
 
