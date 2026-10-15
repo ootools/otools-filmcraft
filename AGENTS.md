@@ -64,16 +64,23 @@
 - 不要在本仓库跑 `cargo build` 而不管 target：外壳是 wasm-only 的，
   宿主（x86_64）下 `main()` 只会打印一行提示，别把它当编译报错。
 
-## 状态：外壳尚未移植（2026-10-15）
+## 状态：外壳已移植（2026-10-15），但有几处已知折扣
 
-仓库骨架（upstream.pin 机制、脚本、CI、元信息）已就绪，但 `shell/` 还没写。
+`shell/` 已能构建出 dist/，无头浏览器实测可启动（约 8s）。做法是**不搬**上游那套
+浏览器适配层，自己起应用：
 
-阻塞点：
+- `shell/src/host.rs`：`Services` 实现。文件读走「宿主真实路径 → 字节」的内存缓存；
+  写走宿主的另存对话框；导出沿用上游语义（先在内存编码，再交给 `write_file`）。
+- 导入 / 打开工程：弹宿主的打开对话框，读完字节后由 `post` 排到下一帧执行
+  `file.import` / `file.open`。
+- 每帧额外 `session.pump_jobs(30ms)`：wasm 单线程，导出与转码在帧之间推进。
 
-- `apps/filmcraft-web` 是 **lib crate**（`wasm-bindgen` 导出 `start(canvas_id)`），
-  没有 `[[bin]]`；它的 `fs.rs / import.rs / opfs.rs / recovery.rs / audio.rs / webcodecs.rs`
-  是一整套浏览器适配层，文件读取走 Blob 分块（1 MiB）+ LRU 预算。
-- 视频文件动辄几百 MB 到数 GB，插件的 `readHostFile`（base64 over IPC）扛不住，
-  必须实现 `Services::reader()` / `read_range()` 直读宿主真实磁盘路径，
-  并把 `export_in_memory()` 保持为 `false` 让导出流式落盘。
-- 结论：这不是「照抄 cadcraft 外壳」能搞定的，需要为宿主重写一版 `Services`。
+**未移植**（功能有折扣，但不影响启动与基本剪辑）：
+
+- 音频输出（上游用 AudioWorklet，插件里没有 ⇒ 静音播放）
+- 自动保存与崩溃恢复（上游用 OPFS 快照 + 媒体副本）
+- WebCodecs 硬解（缺失时上游自己会退回 Rust 软解，可用但慢）
+- 控制通道 `window.filmcraft`（MCP / 自动化）
+
+**下一步值得做的**：`Services::reader()` 目前返回 `None`（引擎会把整个文件读进内存）。
+大素材应该改成按宿主真实路径分块读，避免几百 MB 视频一次性驻留内存。
