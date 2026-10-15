@@ -1,0 +1,12 @@
+# FilmCraft 的 OTools 插件外壳（trunk build --release，在本目录执行）
+#
+# `dist` 指向仓库根的 dist/ —— 也就是 plugin.json 的 `entry: dist/index.html`。
+[build]
+target = "index.html"
+dist = "../dist"
+public_url = "./"
+filehash = true
+
+[serve]
+addresses = ["127.0.0.1"]
+port = 6486

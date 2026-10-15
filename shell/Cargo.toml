@@ -1,0 +1,51 @@
+# FilmCraft 的 OTools 插件外壳。
+#
+# 这一层是我们自己的代码：它把上游 `apps/filmcraft-web` 的浏览器外壳换成
+# 「OTools 插件外壳」——UI 仍然是上游的 `filmcraft-ui-egui`（原封不动），
+# 唯一的区别是媒体/工程文件从哪来、存到哪去（见 `src/host.rs`）。
+#
+# 上游源码在 `../upstream`（按 upstream.pin 的 commit 浅拉取，保持原样勿改），
+# 所以本 crate 用 path 依赖直接复用上游的 crate，不复制、不改动任何上游源码。
+#
+# 注意：上游 `apps/filmcraft-web` 是 **lib crate**（导出 `start(canvas_id)`），
+# 它的整层浏览器适配（Blob 分块读 / OPFS / WebCodecs / AudioWorklet）我们不搬。
+[package]
+name = "otools-filmcraft-shell"
+description = "FilmCraft as an OTools plugin: the upstream egui UI compiled to WebAssembly, with OTools host file I/O"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+# 独立的 workspace：上游 `upstream/` 有自己的 workspace，本 crate 不能并进去
+# （它是 wasm-only 的，并进去会让宿主的 `cargo build` 也去编译 eframe/wgpu）。
+[workspace]
+
+[[bin]]
+name = "otools-filmcraft"
+path = "src/main.rs"
+
+[dependencies]
+filmcraft-engine = { path = "../upstream/crates/engine" }
+filmcraft-ui-egui = { path = "../upstream/crates/ui-egui" }
+egui = { version = "0.36", default-features = false }
+log = { version = "0.4", default-features = false }
+serde_json = "1"
+
+# 只在 wasm 下需要的依赖（宿主/桌面下本 crate 什么都不做）
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+eframe = { version = "0.36", default-features = false, features = ["persistence", "default_fonts", "wgpu", "accesskit"] }
+base64 = "0.22"
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+js-sys = "0.3"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.web-sys]
+version = "0.3"
+features = ["Document", "Element", "HtmlCanvasElement", "HtmlElement", "Location", "UrlSearchParams", "Window"]
+
+# 上游 workspace 没有 `[patch.crates-io]`，也不需要 vendor 补丁。
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16

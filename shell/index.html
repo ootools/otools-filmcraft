@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+  <title>FilmCraft</title>
+  <link data-trunk rel="rust" data-bin="otools-filmcraft" data-wasm-opt="z" data-weak-refs />
+  <link data-trunk rel="copy-file" href="favicon.svg" />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #15151a; }
+    #filmcraft_canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    #filmcraft_loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      color: #b8b8b8; font: 14px system-ui, sans-serif; pointer-events: none; }
+  </style>
+  <script>
+    /*
+     * OTools 宿主桥（插件唯一需要写的 JS）。
+     * ------------------------------------------------------------------
+     * 上游 FilmCraft 的网页版没有文件系统：打开靠 <input type=file>，保存靠浏览器下载。
+     * OTools 宿主注入了 `window.otools`，提供真正的文件对话框与磁盘读写，所以这里把
+     * 「选文件 / 读文件 / 另存 / 写文件」换成宿主调用；WASM 侧（shell/src/otools.rs）
+     * 通过 wasm-bindgen 直接调下面这几个函数。
+     *
+     * 宿主能力有两条路，任一条通就算「在 OTools 里」：
+     *   1. `window.otools` / `window.utools`：宿主注入的包装 API
+     *      （dialog.open/save + readHostFile/writeHostFile）。
+     *   2. `window.__TAURI_INTERNALS__.invoke`：Tauri 原生 IPC，可直接调
+     *      `tools_webview_pick_files` / `tools_webview_read_file` /
+     *      `tools_webview_pick_save_path` / `tools_webview_write_file`。
+     * 两条路都不通（把 dist 拖进普通浏览器）才退回上游的浏览器行为。
+     *
+     * 注意 write_file 的参数形状：`tools_webview_write_file(request: WebviewWriteFileRequest)`
+     * 收的是名为 `request` 的结构体，平铺 `{path, dataBase64}` 会被拒掉。
+     *
+     * 不依赖 otools-plugin-sdk：插件是纯 Rust/WASM 应用，没有前端打包环节。
+     */
+    (function () {
+      var NAME_MAP_KEY = 'filmcraft.otools.paths';
+      var DIAG_KEY = 'filmcraft.otools.diag';
+
+      function baseName(p) {
+        var s = String(p || '');
+        var i = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'));
+        return i >= 0 ? s.slice(i + 1) : s;
+      }
+
+      // 「文件名 -> 上次真实落盘路径」的映射，让再次保存不再弹对话框。
+      function loadMap() {
+        try { return JSON.parse(window.localStorage.getItem(NAME_MAP_KEY) || '{}') || {}; } catch (e) { return {}; }
+      }
+      function saveMap(map) {
+        try { window.localStorage.setItem(NAME_MAP_KEY, JSON.stringify(map)); } catch (e) { /* 忽略 */ }
+      }
+
+      function diag(patch) {
+        try {
+          var d = JSON.parse(window.localStorage.getItem(DIAG_KEY) || '{}') || {};
+          for (var k in patch) d[k] = patch[k];
+          d.at = new Date().toISOString();
+          window.localStorage.setItem(DIAG_KEY, JSON.stringify(d));
+        } catch (e) { /* 忽略 */ }
+      }
+
+      function fail(message) { return Promise.reject(new Error(message)); }
+
+      function wrapper() {
+        var a = (typeof window !== 'undefined' && (window.otools || window.utools)) || null;
+        return a && a.dialog && typeof a.dialog.open === 'function' && typeof a.readHostFile === 'function' ? a : null;
+      }
+
+      function tauriInvoke() {
+        var candidates = [window];
+        try { if (window.parent && window.parent !== window) candidates.push(window.parent); } catch (e) { /* 跨域，忽略 */ }
+        try { if (window.top && window.top !== window) candidates.push(window.top); } catch (e) { /* 跨域，忽略 */ }
+        for (var i = 0; i < candidates.length; i++) {
+          var t = candidates[i] && candidates[i].__TAURI_INTERNALS__;
+          if (t && typeof t.invoke === 'function') return t.invoke.bind(t);
+        }
+        return null;
+      }
+
+      function hostReady() { return !!wrapper() || !!tauriInvoke(); }
+
+      function firstPath(picked) {
+        if (Array.isArray(picked)) return picked.length ? picked[0] : null;
+        if (picked && typeof picked === 'object' && typeof picked.path === 'string') return picked.path.trim() || null;
+        return typeof picked === 'string' ? (picked.trim() || null) : null;
+      }
+
+      /** Rust 传来的 extensions 数组 → 宿主对话框的 filters 形状。 */
+      function toFilters(request) {
+        var exts = (request && request.extensions) || [];
+        if (!exts.length) return undefined;
+        return [{ name: (request && request.title) || '文件', extensions: exts }];
+      }
+
+      function pickOpenPath(request) {
+        var filters = toFilters(request);
+        var title = (request && request.title) || '打开文件';
+        var a = wrapper();
+        if (a) return a.dialog.open({ directory: false, multiple: false, title: title, filters: filters }).then(firstPath);
+        var invoke = tauriInvoke();
+        if (!invoke) return fail('OTools 宿主不可用');
+        return invoke('tools_webview_pick_files', { options: { multiple: false, title: title, filters: filters } }).then(function (files) {
+          var list = Array.isArray(files) ? files : (files ? [files] : []);
+          var first = list[0];
+          if (!first) return null;
+          return typeof first === 'string' ? first.trim() || null : (first.path ? String(first.path).trim() || null : null);
+        });
+      }
+
+      function readHostFile(path) {
+        var a = wrapper();
+        if (a) return a.readHostFile(path);
+        var invoke = tauriInvoke();
+        if (!invoke) return fail('OTools 宿主不可用');
+        return invoke('tools_webview_read_file', { path: path });
+      }
+
+      function writeHostFile(path, dataBase64) {
+        var invoke = tauriInvoke();
+        if (invoke) {
+          return invoke('tools_webview_write_file', { request: { path: path, dataBase64: dataBase64 } }).catch(function (rawError) {
+            var a = wrapper();
+            if (a && typeof a.writeHostFile === 'function') return a.writeHostFile({ path: path, dataBase64: dataBase64 });
+            throw rawError;
+          });
+        }
+        var a = wrapper();
+        if (a && typeof a.writeHostFile === 'function') return a.writeHostFile({ path: path, dataBase64: dataBase64 });
+        return fail('OTools 宿主不可用');
+      }
+
+      function splitPath(p) {
+        var s = String(p || '').trim();
+        if (!s) return { directory: undefined, fileName: undefined };
+        var m = s.match(/^(.*[\\/])([^\\/]+)$/);
+        if (!m) return { directory: undefined, fileName: s };
+        return { directory: m[1].replace(/[\\/]+$/, '') || undefined, fileName: m[2].trim() || undefined };
+      }
+
+      function pickSavePath(defaultPath, title) {
+        var filters = [{ name: 'FilmCraft 文档', extensions: ['fcproj', 'mp4', 'mov', 'mkv', 'webm', 'avi', 'wav', 'mp3', 'png', 'jpg'] }];
+        var a = wrapper();
+        if (a) return a.dialog.save({ title: title, defaultPath: defaultPath, filters: filters }).then(firstPath);
+        var invoke = tauriInvoke();
+        if (!invoke) return fail('OTools 宿主不可用');
+        var sp = splitPath(defaultPath);
+        return invoke('tools_webview_pick_save_path', {
+          options: { title: title, suggestedName: sp.fileName, directory: sp.directory, filters: filters },
+        }).then(function (meta) {
+          if (!meta) return null;
+          return typeof meta === 'string' ? meta.trim() || null : (meta.path ? String(meta.path).trim() || null : null);
+        });
+      }
+
+      window.filmcraftOtools = {
+        available: function () {
+          var a = wrapper();
+          if (a) { diag({ bridge: 'wrapper', host: true }); return true; }
+          var raw = !!tauriInvoke();
+          if (raw) {
+            diag({ bridge: 'raw', host: true });
+            try { console.warn('[filmcraftOtools] window.otools 包装缺失，改用 Tauri IPC 直连 tools_webview_* 命令'); } catch (e) { /* 忽略 */ }
+          } else {
+            diag({ bridge: 'none', host: false });
+          }
+          return raw;
+        },
+
+        theme: function () {
+          if (typeof document === 'undefined') return '';
+          var cl = document.documentElement && document.documentElement.classList;
+          if (!cl) return '';
+          if (cl.contains('dark')) return 'dark';
+          if (cl.contains('light')) return 'light';
+          return '';
+        },
+
+        /**
+         * 打开文件：弹宿主的打开对话框，读取选中的文件（工程或媒体）。
+         * @param {{title?: string, extensions?: string[]}} request
+         * @returns {Promise<Array<{name: string, path: string, dataBase64: string}>>}
+         */
+        openFiles: function (request) {
+          if (!hostReady()) return fail('OTools 打开文件对话框不可用');
+          return pickOpenPath(request).then(function (path) {
+            if (!path) return [];
+            return readHostFile(path).then(function (file) {
+              var name = (file && file.name) || baseName(path);
+              diag({ lastOpen: path });
+              return [{ name: name, path: path, dataBase64: (file && file.dataBase64) || '' }];
+            });
+          });
+        },
+
+        /**
+         * 保存文件。
+         * @param {{name: string, dataBase64: string, forcePick: boolean}} request
+         * @returns {Promise<{path: string}|null>}
+         */
+        saveFile: function (request) {
+          var req = request || {};
+          var name = String(req.name || 'Untitled.fcproj');
+          if (!hostReady()) return fail('OTools 保存对话框不可用');
+
+          var map = loadMap();
+          var known = map[name];
+          if (!req.forcePick && known) {
+            return writeHostFile(known, req.dataBase64).then(function () {
+              diag({ lastSave: known, lastSaveMode: 'overwrite' });
+              return { path: known };
+            });
+          }
+          return pickSavePath(known || name, '保存工程').then(function (path) {
+            if (!path) return null;
+            map[name] = path;
+            saveMap(map);
+            return writeHostFile(path, req.dataBase64).then(function () {
+              diag({ lastSave: path, lastSaveMode: 'dialog' });
+              return { path: path };
+            });
+          });
+        }
+      };
+    })();
+  </script>
+</head>
+<body>
+  <canvas id="filmcraft_canvas"></canvas>
+  <div id="filmcraft_loading">正在加载 FilmCraft…</div>
+</body>
+</html>
