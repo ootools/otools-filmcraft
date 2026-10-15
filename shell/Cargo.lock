@@ -2608,6 +2608,7 @@ dependencies = [
  "eframe",
  "egui",
  "filmcraft-engine",
+ "filmcraft-media",
  "filmcraft-ui-egui",
  "js-sys",
  "log",

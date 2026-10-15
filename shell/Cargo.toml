@@ -27,6 +27,7 @@ path = "src/main.rs"
 
 [dependencies]
 filmcraft-engine = { path = "../upstream/crates/engine" }
+filmcraft-media = { path = "../upstream/crates/media" }
 filmcraft-ui-egui = { path = "../upstream/crates/ui-egui" }
 egui = { version = "0.36", default-features = false }
 log = { version = "0.4", default-features = false }

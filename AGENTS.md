@@ -82,5 +82,13 @@
 - WebCodecs 硬解（缺失时上游自己会退回 Rust 软解，可用但慢）
 - 控制通道 `window.filmcraft`（MCP / 自动化）
 
-**下一步值得做的**：`Services::reader()` 目前返回 `None`（引擎会把整个文件读进内存）。
-大素材应该改成按宿主真实路径分块读，避免几百 MB 视频一次性驻留内存。
+**已优化（2026-10-15）**：`Services::reader()` 已接上基于内存缓存 `Arc<[u8]>` 的
+`CacheReader`（随机访问 reader）+ `read_range()` + `file_loader()`。引擎对素材做
+定位读取 / 流式解码，不再每次 `read_file` 整段克隆——剪 4K 长素材能省下大量整段
+拷贝。缓存也由 `Vec<u8>` 升到 `Arc<[u8]>`，reader 零拷贝共享同一份字节。
+
+**仍未解决（需要宿主配合，是大块工作）**：字节仍整文件驻留内存——导入素材时一次性
+base64 解码进缓存，一个几 GB 的 4K 片段还是会吃几 GB。要彻底不占内存，得让宿主按
+range 直读磁盘：这需要在宿主侧加一个 range-read 命令，并在 wasm 单线程下用
+worker + `Atomics.wait` 把异步 IPC 桥成同步 `Read+Seek`（原生 `FsServices` 的
+`FileReader` 就是这么干的，但那是直接 `std::fs`，没有 IPC）。这一步单独排期。
