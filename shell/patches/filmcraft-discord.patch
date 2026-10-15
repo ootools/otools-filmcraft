@@ -123,3 +123,36 @@ index 2af12ca..6a48e66 100644
          crate::icons::paint(ui.painter(), Rect::from_center_size(pos2(r.min.x + 20.0, r.center().y), vec2(16.0, 16.0)), icon, fg);
          ui.painter().galley(pos2(r.min.x + 34.0, r.center().y - g.size().y / 2.0), g, fg);
          if resp.clicked() {
+diff --git a/crates/ui-egui/src/theme.rs b/crates/ui-egui/src/theme.rs
+index 21a5001..a343a0a 100644
+--- a/crates/ui-egui/src/theme.rs
++++ b/crates/ui-egui/src/theme.rs
+@@ -6,6 +6,15 @@
+ use std::sync::Arc;
+ 
+ use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId, Stroke, TextStyle, Visuals};
++
++/// 宿主 shell 注入的额外 fallback 字体（键, 字节）；wasm 读不到系统字体。
++static EXTRA_FALLBACK_FONTS: std::sync::OnceLock<Vec<(String, std::sync::Arc<FontData>)>> = std::sync::OnceLock::new();
++pub fn set_extra_fallback_fonts(fonts: Vec<(String, std::sync::Arc<FontData>)>) {
++    let _ = EXTRA_FALLBACK_FONTS.set(fonts);
++}
++fn extra_fallback_fonts() -> &'static [(String, std::sync::Arc<FontData>)] {
++    EXTRA_FALLBACK_FONTS.get().map(|v| &v[..]).unwrap_or(&[])
++}
+ use serde::{Deserialize, Serialize};
+ 
+ #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+@@ -432,6 +441,12 @@ pub fn install(ctx: &egui::Context, t: &Tokens) {
+     add_craft_fonts(&mut fonts);
+     crate::cjk::install(&mut fonts);
+     crate::rtl::install(&mut fonts);
++    for (name, data) in extra_fallback_fonts() {
++        fonts.font_data.insert(name.clone(), data.clone());
++    }
++    for stack in fonts.families.values_mut() {
++        stack.extend(extra_fallback_fonts().iter().map(|(n, _)| n.clone()));
++    }
+     ctx.set_fonts(fonts);
+     apply_visuals(ctx, t);
+ }

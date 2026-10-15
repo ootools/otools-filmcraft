@@ -104,6 +104,11 @@ mod web {
                             let _ = session.execute("file.openDemoProject", serde_json::json!({}));
                         }
                         let mut app = FilmcraftApp::new(session);
+                        // wasm 读不到系统字体：内嵌 CJK + 阿拉伯 fallback，否则中文/日文/阿拉伯文方框。
+                        filmcraft_ui_egui::theme::set_extra_fallback_fonts(vec![
+                            ("otools-cjk".into(), std::sync::Arc::new(eframe::egui::FontData::from_static(include_bytes!("../assets/fonts/otools-cjk-subset.ttf")))),
+                            ("otools-arabic".into(), std::sync::Arc::new(eframe::egui::FontData::from_static(include_bytes!("../assets/fonts/otools-arabic-subset.ttf")))),
+                        ]);
                         // 跟随宿主语言：`system_languages` 钩子把宿主 locale 喂给上游，
                         // 上游按 BCP47（如 zh-CN）映射到界面语言；宿主切换语言时由
                         // `otools-locale-changed` 事件触发下一帧重套偏好（见 `logic`）。
