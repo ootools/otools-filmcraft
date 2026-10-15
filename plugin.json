@@ -22,5 +22,5 @@
   "screenshots": [],
   "summary": "FilmCraft（开源、纯 Rust 重写的 Adobe Premiere Pro 式视频剪辑）的 OTools 插件版：时间线、转场、调色与音频混合。",
   "uuid": "otools-filmcraft",
-  "version": "0.1.1"
+  "version": "0.1.2"
 }
