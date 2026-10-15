@@ -2,7 +2,7 @@
   "devUrl": "http://127.0.0.1:6486",
   "developerName": "jry",
   "displayName": "FilmCraft",
-  "displayNameCN": "视频剪辑",
+  "displayNameCN": "FilmCraft",
   "entry": "dist/index.html",
   "quickDev": true,
   "hasAd": false,
