@@ -7,6 +7,16 @@
 - 插件目录：`plugins/otools-filmcraft`（在 [ootools/OTools](https://github.com/ootools/OTools) 主仓里）
 - 上游源码：**不入库**，见 `upstream.pin` + `scripts/fetch-upstream.mjs`
 
+## 上游版本
+
+打包所用的上游提交。`upstream.pin` 是唯一真源，这张表用来回溯「哪个插件版本打的是哪份上游代码」，
+每次发布都要在这里加一行。
+
+| 插件版本 | 上游标签 | 上游提交 | 打包日期 |
+| --- | --- | --- | --- |
+| 0.1.3 | v0.9.0 | `4a69a038d32761f604b3c7e4845b21fb40b3cbe4` | 2026-10-21 |
+| 0.1.2 | — | `f03e21556d8e3a7155b91892d958debd5255d7af` | — |
+
 ## 构建
 
 ```bash
