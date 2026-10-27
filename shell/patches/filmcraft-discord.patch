@@ -1,8 +1,8 @@
 diff --git a/apps/filmcraft/src/native_menu.rs b/apps/filmcraft/src/native_menu.rs
-index f08fe0b..1326cfe 100644
+index 7ed4c49..b26f8c3 100644
 --- a/apps/filmcraft/src/native_menu.rs
 +++ b/apps/filmcraft/src/native_menu.rs
-@@ -39,11 +39,10 @@ pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, Men
+@@ -48,11 +48,10 @@ pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, Men
          native.push((it.clone(), mi.clone()));
          let _ = settings.append(&mi);
      }
@@ -16,8 +16,8 @@ index f08fe0b..1326cfe 100644
          if let Some(it) = items.iter().find(|i| i.id == id) {
              // recorded as built (enabled, no shortcut), so the first update applies the real state
              native.push((Item { enabled: true, shortcut: None, ..it.clone() }, mi.clone()));
-@@ -58,7 +57,6 @@ pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, Men
-     let [(_, hide), (_, hide_others), (_, quit)] = &predefined;
+@@ -70,7 +69,6 @@ pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, Men
+     let quit = MenuItem::with_id(quit_id, app.ui.language.tr(quit_label), true, quit_accel);
      let _ = app_menu.append_items(&[
          &about,
 -        &discord,
@@ -77,10 +77,10 @@ index 37df98d..a272716 100644
      ("help.appPage", "FilmCraft on getartcraft.com", APP_PAGE),
      ("help.github", "FilmCraft on GitHub", GITHUB),
 diff --git a/crates/ui-egui/src/menus.rs b/crates/ui-egui/src/menus.rs
-index 48b4b82..aabb5b7 100644
+index 67913eb..0e7efa8 100644
 --- a/crates/ui-egui/src/menus.rs
 +++ b/crates/ui-egui/src/menus.rs
-@@ -136,7 +136,6 @@ pub const UI_COMMANDS: &[UiCommand] = &[
+@@ -139,7 +139,6 @@ pub const UI_COMMANDS: &[UiCommand] = &[
      uic!("mode.import", "Import", [], None),
      uic!("mode.edit", "Edit", [], None),
      uic!("mode.export", "Export", ["File", "Export"], Some("Cmd+M")),
@@ -89,10 +89,10 @@ index 48b4b82..aabb5b7 100644
      uic!("help.appPage", "FilmCraft on getartcraft.com", ["Help"], None),
      uic!("help.github", "FilmCraft on GitHub", ["Help"], None),
 diff --git a/crates/ui-egui/src/panels/dialogs.rs b/crates/ui-egui/src/panels/dialogs.rs
-index 8bc23db..f9cb5db 100644
+index b8d738a..6ef9978 100644
 --- a/crates/ui-egui/src/panels/dialogs.rs
 +++ b/crates/ui-egui/src/panels/dialogs.rs
-@@ -489,8 +489,6 @@ fn about_tab(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
+@@ -490,8 +490,6 @@ fn about_tab(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
              links::open(app, ui.ctx(), url);
          }
      };
@@ -124,7 +124,7 @@ index 2af12ca..6a48e66 100644
          ui.painter().galley(pos2(r.min.x + 34.0, r.center().y - g.size().y / 2.0), g, fg);
          if resp.clicked() {
 diff --git a/crates/ui-egui/src/theme.rs b/crates/ui-egui/src/theme.rs
-index 21a5001..a343a0a 100644
+index 36b5716..0072b15 100644
 --- a/crates/ui-egui/src/theme.rs
 +++ b/crates/ui-egui/src/theme.rs
 @@ -6,6 +6,15 @@
