@@ -5,6 +5,15 @@ dist-pack/
 target/
 **/target/
 
+# ---- 原生动态库 ----
+# 由 CI（.github/workflows/release-plugin.yml 的 build-native / merge-native）产出，
+# 本地构建只为本机运行方便。二进制不入库：宿主约定文件名 lib/macOS.dylib、
+# lib/Windows.dll、lib/Linux.so。
+lib/
+*.dylib
+*.dll
+*.so
+
 # ---- 上游源码 ----
 # 不入库：只保留 upstream.pin 里的 commit SHA，按需 node scripts/fetch-upstream.mjs 拉取
 /upstream/

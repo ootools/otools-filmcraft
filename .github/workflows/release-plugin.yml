@@ -31,7 +31,112 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+
+  # 三个平台各建一份原生动态库（native 适配层 = 上游 filmcraft-automation 的 headless 后端）。
+  # 宿主按平台名挑 lib/<name>，文件名是**宿主约定**、与 crate 名无关
+  # （见宿主 native_plugins/core.rs 的 platform_lib_name()）：
+  #   macOS.dylib / Windows.dll / Linux.so
+  #
+  # macOS 双架构各出一份带架构后缀的中间产物，由下面的 merge-native（跑在 macOS，
+  # 因为只有 macOS runner 有 lipo）合成 universal 的 macOS.dylib。
+  # 这与宿主自己的 .github/workflows/plugin-pack.yml 完全同法，
+  # 因此**一个 .oplg 同时覆盖 arm64 与 x64**。
+  build-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: linux
+            built: target/release/libotools_filmcraft_native.so
+            output_name: Linux.so
+          - os: windows-latest
+            artifact: windows
+            built: target/release/otools_filmcraft_native.dll
+            output_name: Windows.dll
+          - os: macos-latest
+            artifact: macos-arm64
+            built: target/release/libotools_filmcraft_native.dylib
+            output_name: macOS-arm64.dylib
+          - os: macos-15-intel
+            artifact: macos-x86_64
+            built: target/release/libotools_filmcraft_native.dylib
+            output_name: macOS-x86_64.dylib
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # native 工程用 path 依赖直接吃上游 crate，所以必须先按 upstream.pin 拉源码。
+      - name: 拉取上游源码
+        env:
+          CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+        run: node scripts/fetch-upstream.mjs
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            native -> native/target
+          key: plugin-native-${{ matrix.artifact }}
+      - name: 构建 native 适配层
+        run: cargo build --release --manifest-path native/Cargo.toml
+      - name: 原生适配层单元测试
+        run: cargo test --release --manifest-path native/Cargo.toml --lib -- --test-threads=1
+      - name: 按宿主约定命名产物
+        shell: bash
+        run: |
+          set -euo pipefail
+          built="native/${{ matrix.built }}"
+          test -f "$built" || { echo "未找到产物：$built"; ls -la native/target/release | head -40; exit 1; }
+          mkdir -p staging/lib
+          cp "$built" "staging/lib/${{ matrix.output_name }}"
+          ls -la staging/lib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.artifact }}
+          path: staging/lib/*
+          if-no-files-found: error
+          retention-days: 7
+
+  # 把四份原生产物汇成一个 lib/：两份 macOS 用 lipo 合成 universal macOS.dylib。
+  # 与宿主 plugin-pack.yml 同法；必须在 macOS 上跑（lipo 是 macOS 工具）。
+  merge-native:
+    needs: build-native
+    runs-on: macos-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-*
+          merge-multiple: true
+          path: lib
+      - name: 合成 universal macOS.dylib
+        shell: bash
+        run: |
+          set -euo pipefail
+          arm=lib/macOS-arm64.dylib
+          intel=lib/macOS-x86_64.dylib
+          test -f "$arm"   || { echo "缺少 arm64 产物"; ls -la lib; exit 1; }
+          test -f "$intel" || { echo "缺少 x86_64 产物"; ls -la lib; exit 1; }
+          test -f lib/Linux.so    || { echo "缺少 Linux 产物"; ls -la lib; exit 1; }
+          test -f lib/Windows.dll || { echo "缺少 Windows 产物"; ls -la lib; exit 1; }
+          lipo -create "$arm" "$intel" -output lib/macOS.dylib
+          codesign --force --sign - --timestamp=none lib/macOS.dylib
+          rm -f "$arm" "$intel"
+          echo "=== lipo -info ==="
+          lipo -info lib/macOS.dylib
+          ls -la lib
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-lib
+          path: lib/*
+          if-no-files-found: error
+          retention-days: 7
+
   build:
+    needs: merge-native
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.meta.outputs.version }}
@@ -87,6 +192,11 @@ jobs:
         env:
           CARGO_NET_GIT_FETCH_WITH_CLI: "true"
         run: node scripts/build-wasm.mjs
+      # 原生产物来自 merge-native（已把 macOS 双架构 lipo 成 universal macOS.dylib）。
+      - uses: actions/download-artifact@v4
+        with:
+          name: native-lib
+          path: lib
       - name: 打包正式插件并生成摘要
         env:
           VERSION: ${{ steps.meta.outputs.version }}
@@ -96,6 +206,15 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
           PACKID: ${{ steps.meta.outputs.packid }}
         run: node scripts/verify-plugin.mjs dist-pack
+      # 防止「native job 绿了但产物没进包」这类静默失败。
+      - name: 断言包内含三平台 native 产物
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg=$(ls dist-pack/*.oplg | head -1)
+          test -n "$pkg" || { echo "没有 .oplg"; exit 1; }
+          unzip -l "$pkg" | grep -E 'lib/(Linux\.so|Windows\.dll|macOS\.dylib)'
+          echo "✓ 三平台 native 产物都在包内"
       - uses: actions/upload-artifact@v4
         with:
           name: oplg

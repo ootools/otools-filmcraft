@@ -1,0 +1,43 @@
+# FilmCraft 的 OTools 插件 native 适配层。
+#
+# 与 designcraft / cadcraft / pdfcraft 的差异（**不是照抄**）：上游 `crates/automation`
+# 的工具层没有独立导出，它只有一个 `rmcp` 的 `FilmcraftMcp` 服务端（`#[tool_router]` 宏
+# 生成工具表与分发）。因此本 crate 不重写工具定义，而是在 dylib 内起一个
+# **常驻**的上游 MCP 服务，经内存管道（`serve_io` + `tokio::io::duplex`）与它对话：
+#   - tools/list → 拆出 `result.tools` 转给宿主
+#   - tools/call → 转发 `{name, arguments}`，把 `result.content` / `isError` 转给宿主
+#
+# 好处：工具表、schema 校验、长任务（导出进度）、资源都跟着上游走，零漂移。
+# 代价：需要一个 tokio runtime 与一次 initialize 握手（见 `service.rs`）。
+#
+# 独立 workspace：上游 workspace 是 wasm/GUI 导向，并进来会把 UI 依赖带进插件构建。
+[package]
+name = "otools-filmcraft-native"
+description = "FilmCraft as an OTools plugin: headless MCP backend driving the upstream filmcraft-automation rmcp server"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+name = "otools_filmcraft_native"
+
+[dependencies]
+filmcraft-automation = { path = "../upstream/crates/automation" }
+filmcraft-engine = { path = "../upstream/crates/engine" }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "io-util", "sync", "macros", "time"] }
+
+# 上游 workspace 的 patch 不会跟着 path 依赖传播，当前 filmcraft 没有
+# `[patch.crates-io]`；上游新增补丁时必须同步到这里（见 AGENTS.md）。
+
+# cdylib 必须可 unwind：插件 FFI 边界在插件内部捕获 panic，
+# 若 release profile 设成 abort，宿主会整体被杀。
+[profile.release]
+panic = "unwind"
+opt-level = 3
+lto = "thin"
+codegen-units = 16
