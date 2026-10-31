@@ -3,7 +3,7 @@
   "ssh": "git@github.com:storytold/filmcraft.git",
   "https": "https://github.com/storytold/filmcraft.git",
   "ref": "main",
-  "commit": "30536bc5d0ddf690f2181b7b97182db8658a6038",
+  "commit": "142fddc1910d179e8111f3263ab3bb3c87fc529b",
   "strategy": "shallow-fetch-pinned-commit",
   "note": "上游代码不入库。改这个 commit 并跑 node scripts/fetch-upstream.mjs 即可同步；务必用完整 SHA，保证可复现。"
 }

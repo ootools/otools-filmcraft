@@ -14,11 +14,11 @@
    `tools_webview_read_file` / `tools_webview_write_file` 与文件对话框，够用；
    再加 FFI 只是多一份动态库要跟着分发。
 4. **改 `shell/Cargo.toml` 的上游依赖版本时，对齐 `upstream/Cargo.toml` 的
-   `[workspace.dependencies]`**（egui/eframe 目前是 `0.36` 这一档）。
+   `[workspace.dependencies]`**（egui/eframe 目前是 `0.37` 这一档）。
 
 ## 上手前必须知道的三件事
 
-- **rustc 版本**：上游 `rust-version = "1.95"`（egui 0.36 用了 1.95 才稳定的
+- **rustc 版本**：上游 `rust-version = "1.95"`（egui 0.37 用了 1.95 才稳定的
   `Vec::push_mut`）。本机 1.94 会在 `epaint` 上直接 `E0658`。
   `scripts/build-wasm.mjs` 会检查并提示。本机环境变量 `RUSTC_WRAPPER=sccache`
   指向 PATH 里的旧 rustc，会让 cargo 用错工具链——构建前 `unset RUSTC_WRAPPER`。
