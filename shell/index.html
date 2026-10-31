@@ -155,7 +155,65 @@
         });
       }
 
-      window.filmcraftOtools = {
+            /* ---------- 宿主投递的「打开方式」 ---------- */
+
+      /*
+       * 宿主（`platform/file_open.rs`）在系统里双击已绑定扩展名的文件时，把路径排进
+       * 本插件的投递队列并对本 webview `emit_to("otools-open-file")` 敲门。事件只做
+       * 敲门，载荷一律用 `otools_consume_open_files` 取走，所以「宿主先投、插件后启动」
+       * 与「插件先启、宿主后投」两种时序都不丢件。
+       *
+       * 读到的字节先攒在 DELIVERED，由 wasm 侧每帧 `takeDelivered()` 取走——大文件
+       * 不进 DOM 事件，事件只负责把 egui 从空闲里叫醒重绘一帧。
+       */
+      var DELIVERED = [];
+      var DELIVER_READY_EVENT = 'otools-open-files-arrived';
+
+      function consumeOpenFiles() {
+        var invoke = tauriInvoke();
+        if (!invoke) return;
+        invoke('otools_consume_open_files', { pluginUuid: 'otools-filmcraft' }).then(function (paths) {
+          var list = Array.isArray(paths) ? paths.map(String).filter(Boolean) : [];
+          return list.reduce(function (chain, path) {
+            return chain.then(function () {
+              return readHostFile(path).then(function (file) {
+                DELIVERED.push({
+                  path: path,
+                  name: (file && file.name) || baseName(path),
+                  dataBase64: (file && file.dataBase64) || ''
+                });
+              }, function () { /* 读不到就跳过，别让一个坏文件卡住整批 */ });
+            });
+          }, Promise.resolve());
+        }).then(function () {
+          if (!DELIVERED.length) return;
+          try { window.dispatchEvent(new CustomEvent(DELIVER_READY_EVENT)); } catch (e) { /* 忽略 */ }
+        }, function () { /* 宿主未就绪：静默 */ });
+      }
+
+      // 先注册监听再取一次：保证「取空后宿主才投递」的窗口里敲门一定命中。
+      (function () {
+        var internals = null;
+        try { internals = window.__TAURI_INTERNALS__; } catch (e) { /* 忽略 */ }
+        if (internals && typeof internals.invoke === 'function' && typeof internals.transformCallback === 'function') {
+          var handlerId = internals.transformCallback(function () { consumeOpenFiles(); }, false);
+          internals.invoke('plugin:event|listen', {
+            event: 'otools-open-file',
+            target: { kind: 'Any' },
+            handler: handlerId
+          }).catch(function () { /* 忽略 */ });
+        }
+        consumeOpenFiles();
+      })();
+
+window.filmcraftOtools = {
+        /** wasm 每帧调用：取走已读好的投递（`[{path, name, dataBase64}]`）。 */
+        takeDelivered: function () {
+          var out = DELIVERED;
+          DELIVERED = [];
+          return out;
+        },
+
         available: function () {
           var a = wrapper();
           if (a) { diag({ bridge: 'wrapper', host: true }); return true; }

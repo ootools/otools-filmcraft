@@ -30,6 +30,10 @@ extern "C" {
     /// `{name, dataBase64, forcePick}` → `{path}` 或 `null`（用户取消）。
     #[wasm_bindgen(js_namespace = filmcraftOtools, js_name = "saveFile")]
     fn host_save_file(request: JsValue) -> js_sys::Promise;
+
+    /// 宿主投递的「打开方式」：JS 侧已把文件读成字节攒好，这里一次取走。
+    #[wasm_bindgen(js_namespace = filmcraftOtools, js_name = "takeDelivered")]
+    fn take_delivered_raw() -> js_sys::Array;
 }
 
 thread_local! {
@@ -58,6 +62,43 @@ pub fn is_community_link(url: &str) -> bool {
     url.contains("discord.gg") || url.contains("getartcraft.com") || url.contains("github.com/storytold")
 }
 
+/// 取走宿主投递的文件：工程走 `file.open`，其余素材走 `file.import`
+/// （与「文件 ▸ 打开工程」「文件 ▸ 导入」同一条路，字节先登记进 `host::put`）。
+///
+/// 方向与保存相反：宿主在系统里双击已绑定扩展名的文件 → 投递队列 →
+/// 本函数取走 → 引擎命令。
+pub fn drain_delivered() {
+    for item in take_delivered_raw().iter() {
+        if !item.is_object() {
+            continue;
+        }
+        let name = field(&item, "name").unwrap_or_else(|| "Untitled.fcproj".to_string());
+        let data = field(&item, "dataBase64").unwrap_or_default();
+        let path = field(&item, "path")
+            .filter(|p| !p.trim().is_empty())
+            .unwrap_or_else(|| format!("/{name}"));
+        let bytes = match decode(&data) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                log::error!("delivered file {name}: {e}");
+                continue;
+            }
+        };
+        let is_project = path.to_ascii_lowercase().ends_with(".fcproj");
+        crate::host::put(path.clone(), bytes);
+        crate::host::post(move |app| {
+            let result = if is_project {
+                app.session.execute("file.open", serde_json::json!({ "path": path }))
+            } else {
+                let bin = app.import_bin().0;
+                app.session.execute("file.import", serde_json::json!({ "paths": [path], "bin": bin }))
+            };
+            if let Err(e) = result {
+                app.status(format!("打开失败：{e}"));
+            }
+        });
+    }
+}
 pub fn force_pick(force: bool) {
     FORCE_PICK.with(|flag| flag.set(force));
 }

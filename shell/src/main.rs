@@ -57,6 +57,9 @@ mod web {
                 self.app.apply_prefs(ctx);
             }
             // 异步读文件完成后排的动作在这里执行（上游用 `post` + WebApp 做同一件事）。
+            // 宿主投递的「打开方式」：系统里双击已绑定扩展名的文件 → 登记字节 + 排队命令，
+            // 紧接的 pump 与「文件 ▸ 打开工程」「文件 ▸ 导入」走同一条路。
+            crate::otools::drain_delivered();
             crate::host::pump(&mut self.app);
             self.app.logic(ctx, frame);
             // 导出/转码在帧之间推进（wasm 单线程，没有后台线程）。
@@ -176,6 +179,11 @@ mod web {
         }) as Box<dyn FnMut()>);
         let _ = window.add_event_listener_with_callback(
             "otools-locale-changed",
+            closure.as_ref().unchecked_ref::<js_sys::Function>(),
+        );
+        // 宿主投递了文件：同一份「置位 + 请求重绘」逻辑，让下一帧的 logic 去取件。
+        let _ = window.add_event_listener_with_callback(
+            "otools-open-files-arrived",
             closure.as_ref().unchecked_ref::<js_sys::Function>(),
         );
         closure.forget();

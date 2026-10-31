@@ -4,6 +4,9 @@
   "displayName": "FilmCraft",
   "displayNameCN": "FilmCraft",
   "entry": "dist/index.html",
+  "fileAssociations": [
+    { "ext": "fcproj", "desc": "FilmCraft 工程", "mime": "application/json" }
+  ],
   "quickDev": true,
   "hasAd": false,
   "icon": "🎬",
