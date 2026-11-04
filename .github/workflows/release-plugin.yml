@@ -105,7 +105,10 @@ jobs:
   # 与宿主 plugin-pack.yml 同法；必须在 macOS 上跑（lipo 是 macOS 工具）。
   merge-native:
     needs: build-native
-    runs-on: macos-latest
+    # 组织里 macos-latest 的并发队列很长：这个 job 串行排在 4 个 build-native 之后，
+    # 曾在排队 ~25min 后被 GitHub 取消，连带 build/publish 被 skip。macos-15-intel
+    # 与 build-native 的 x86_64 job 同一 runner 池，供给更稳；lipo/codesign 均可运行。
+    runs-on: macos-15-intel
     steps:
       - uses: actions/download-artifact@v4
         with:
