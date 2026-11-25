@@ -66,6 +66,8 @@ mod web {
             if self.app.session.pump_jobs(Duration::from_millis(30)) {
                 ctx.request_repaint();
             }
+            self.app.finish_ime_reset_logic(ctx);
+            filmcraft_ui_egui::framework::close_path(ctx, &mut self.app);
         }
 
         fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
@@ -101,6 +103,8 @@ mod web {
                     canvas,
                     options,
                     Box::new(move |cc| {
+                        filmcraft_ui_egui::framework::install_headless(&cc.egui_ctx);
+                        filmcraft_ui_egui::install_ime_reset_callbacks(&cc.egui_ctx);
                         let mut session = Session::new(Arc::new(crate::host::HostServices));
                         // 与上游一致：默认先打开一个示意工程（`?empty` 关掉）。
                         if !has_flag(&query, "empty") {
