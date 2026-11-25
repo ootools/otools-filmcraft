@@ -1,8 +1,8 @@
 diff --git a/apps/filmcraft/src/native_menu.rs b/apps/filmcraft/src/native_menu.rs
-index ec2817b..173ffdc 100644
+index 14895e2..9ac5e3d 100644
 --- a/apps/filmcraft/src/native_menu.rs
 +++ b/apps/filmcraft/src/native_menu.rs
-@@ -48,11 +48,10 @@ pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, Men
+@@ -56,11 +56,10 @@ pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, Men
          native.push((it.clone(), mi.clone()));
          let _ = settings.append(&mi);
      }
@@ -16,7 +16,7 @@ index ec2817b..173ffdc 100644
          if let Some(it) = items.iter().find(|i| i.id == id) {
              // recorded as built (enabled, no shortcut), so the first update applies the real state
              native.push((Item { enabled: true, shortcut: None, ..it.clone() }, mi.clone()));
-@@ -70,7 +69,6 @@ pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, Men
+@@ -78,7 +77,6 @@ pub fn install(app: &FilmcraftApp, ctx: egui::Context) -> (Receiver<String>, Men
      let quit = MenuItem::with_id(quit_id, app.ui.language.tr(quit_label), true, quit_accel);
      let _ = app_menu.append_items(&[
          &about,
@@ -63,7 +63,7 @@ index 6b6d7a0..4d32b54 100644
      let popup_id = egui::Id::unique("workspaces-popup");
      if ws_resp.clicked() || wresp.clicked() {
 diff --git a/crates/ui-egui/src/links.rs b/crates/ui-egui/src/links.rs
-index e5d4b90..570ab8d 100644
+index efab6f6..8e5c6d9 100644
 --- a/crates/ui-egui/src/links.rs
 +++ b/crates/ui-egui/src/links.rs
 @@ -18,8 +18,7 @@ pub const GITHUB: &str = "https://github.com/storytold/filmcraft";
@@ -77,7 +77,7 @@ index e5d4b90..570ab8d 100644
      ("help.appPage", "FilmCraft on getartcraft.com", APP_PAGE),
      ("help.github", "FilmCraft on GitHub", GITHUB),
 diff --git a/crates/ui-egui/src/menus.rs b/crates/ui-egui/src/menus.rs
-index 2ecb37b..07d9585 100644
+index 9b152db..9eb7c54 100644
 --- a/crates/ui-egui/src/menus.rs
 +++ b/crates/ui-egui/src/menus.rs
 @@ -147,7 +147,6 @@ pub const UI_COMMANDS: &[UiCommand] = &[
@@ -89,10 +89,10 @@ index 2ecb37b..07d9585 100644
      uic!("help.appPage", "FilmCraft on getartcraft.com", ["Help"], None),
      uic!("help.github", "FilmCraft on GitHub", ["Help"], None),
 diff --git a/crates/ui-egui/src/panels/dialogs.rs b/crates/ui-egui/src/panels/dialogs.rs
-index 18eeb44..55c7bf9 100644
+index ea9d1d1..d50cb06 100644
 --- a/crates/ui-egui/src/panels/dialogs.rs
 +++ b/crates/ui-egui/src/panels/dialogs.rs
-@@ -498,8 +498,6 @@ fn about_tab(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
+@@ -506,8 +506,6 @@ fn about_tab(app: &mut FilmcraftApp, ui: &mut egui::Ui) {
              links::open(app, ui.ctx(), url);
          }
      };
@@ -102,7 +102,7 @@ index 18eeb44..55c7bf9 100644
      link(ui, "appPage", Icon::Globe, tl!("FilmCraft on getartcraft.com"), links::APP_PAGE, false);
      link(ui, "github", Icon::Code, tl!("Source code on GitHub"), links::GITHUB, false);
 diff --git a/crates/ui-egui/src/panels/import_mode.rs b/crates/ui-egui/src/panels/import_mode.rs
-index 8f0e427..5c93b1d 100644
+index 4ec9555..93b59de 100644
 --- a/crates/ui-egui/src/panels/import_mode.rs
 +++ b/crates/ui-egui/src/panels/import_mode.rs
 @@ -53,7 +53,7 @@ pub fn show(app: &mut FilmcraftApp, ui: &mut egui::Ui, rect: Rect) {
@@ -124,7 +124,7 @@ index 8f0e427..5c93b1d 100644
          ui.painter().galley(pos2(r.min.x + 34.0, r.center().y - g.size().y / 2.0), g, fg);
          if resp.clicked() {
 diff --git a/crates/ui-egui/src/theme.rs b/crates/ui-egui/src/theme.rs
-index 13a9cc6..91f34fc 100644
+index e4e494e..fd30f43 100644
 --- a/crates/ui-egui/src/theme.rs
 +++ b/crates/ui-egui/src/theme.rs
 @@ -6,6 +6,15 @@
@@ -153,6 +153,6 @@ index 13a9cc6..91f34fc 100644
 +    for stack in fonts.families.values_mut() {
 +        stack.extend(extra_fallback_fonts().iter().map(|(n, _)| n.clone()));
 +    }
-     ctx.set_fonts(fonts);
+     craft_ui::fonts::load(ctx, fonts);
      apply_visuals(ctx, t);
  }
